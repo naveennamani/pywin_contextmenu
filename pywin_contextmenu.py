@@ -19,6 +19,9 @@ from winreg import SetValue
 from winreg import SetValueEx
 
 
+################################################################################
+# Enum classes for defining RootType and UserType
+################################################################################
 class RootType(str, Enum):
     DIR = r"Directory\\shell\\"
     DIR_BG = r"Directory\\Background\\shell\\"
@@ -33,6 +36,45 @@ class UserType(Enum):
     ROOT = HKEY_CLASSES_ROOT
 
 
+################################################################################
+# classes for storing the information about ContextMenuItem and ContextMenuGroup
+################################################################################
+class ContextMenuItem(object):
+    def __init__(self, item_name, command, item_reg_key = "", icon = "",
+                 extended = False):
+        self.item_name = item_name
+        self.item_reg_key = item_name if item_reg_key == "" else item_reg_key
+        self.icon = icon
+        self.command = command
+        self.extended = extended
+
+
+class ContextMenuGroup(object):
+    def __init__(self, group_name, group_reg_key = "", icon = "",
+                 extended = False):
+        self.group_name = group_name
+        self.group_reg_key = group_name if group_reg_key == "" else group_reg_key
+        self.icon = icon
+        self.items = []
+        self.extended = extended
+
+    def add_item(self, item):
+        assert isinstance(
+            item, (ContextMenuItem, ContextMenuGroup)
+        ), "Please pass instance of ContextMenuItem or ContextMenuGroup"
+        self.items.append(item)
+
+
+################################################################################
+# Custom Exceptions
+################################################################################
+class CyclicGroupException(Exception):
+    pass
+
+
+################################################################################
+# Utility functions
+################################################################################
 def get_root(user_type: UserType, root_type: RootType,
              file_type: str = None) -> HKEYType:
     """
@@ -47,7 +89,7 @@ def get_root(user_type: UserType, root_type: RootType,
         root_type = r"Software\\Classes\\" + root_type.value
     else:
         root_type = root_type.value
-    if '{FILE_TYPE}' in root_type:
+    if "{FILE_TYPE}" in root_type:
         if file_type is None:
             raise ValueError(
                 'Please provide a FILE_TYPE you want\n'
@@ -75,54 +117,18 @@ def python_script_cmd(
     return f'{py_executable} "{script_path}" "%V"'
 
 
-class ContextMenuItem(object):
-    def __init__(self, item_name, command, item_reg_key = "", icon = ""):
-        self.item_name = item_name
-        self.item_reg_key = item_name if item_reg_key == "" else item_reg_key
-        self.icon = icon
-        self.command = command
-
-
-class ContextMenuGroup(object):
-    def __init__(self, group_name, group_reg_key = "", icon = ""):
-        self.group_name = group_name
-        self.group_reg_key = group_name if group_reg_key == "" else group_reg_key
-        self.icon = icon
-        self.items = []
-
-    def add_item(self, item):
-        assert isinstance(
-            item, (ContextMenuItem, ContextMenuGroup)
-        ), "Please pass instance of ContextMenuItem or ContextMenuGroup"
-        self.items.append(item)
-
-
-def create_item(root_key, item: ContextMenuItem):
-    item_key = CreateKey(root_key, item.item_reg_key)
-    SetValue(item_key, '', REG_SZ, item.item_name)
-    SetValue(item_key, 'command', REG_SZ, item.command)
-    if item.icon != "":
-        SetValueEx(item_key, 'Icon', 0, REG_SZ, item.icon)
-    CloseKey(item_key)
-
-
-def create_group(root_key, group: ContextMenuGroup):
-    group_key = CreateKey(root_key, group.group_reg_key)
-
-    SetValueEx(group_key, 'MUIVerb', 0, REG_SZ, group.group_name)
-    SetValueEx(group_key, 'SubCommands', 0, REG_SZ, '')
-    if group.icon != "":
-        SetValueEx(group_key, 'Icon', 0, REG_SZ, group.icon)
-
-    subcommands_key = CreateKey(group_key, "shell")
-
+def is_cyclic_group(group: ContextMenuGroup, all_group_reg_keys = None) -> bool:
+    if all_group_reg_keys is None:
+        all_group_reg_keys = [group.group_reg_key]
     for item in group.items:
-        if isinstance(item, ContextMenuItem):
-            create_item(subcommands_key, item)
-        elif isinstance(item, ContextMenuGroup):
-            create_group(subcommands_key, item)
-    CloseKey(subcommands_key)
-    CloseKey(group_key)
+        if isinstance(item, ContextMenuGroup):
+            if item.group_reg_key not in all_group_reg_keys:
+                all_group_reg_keys.append(item.group_reg_key)
+                if is_cyclic_group(item, all_group_reg_keys):
+                    return True
+            else:
+                return True
+    return False
 
 
 def _del_key(rk):
@@ -133,6 +139,44 @@ def _del_key(rk):
         # print(sk)
         _del_key(OpenKey(rk, sk))
     DeleteKey(rk, "")
+
+
+################################################################################
+# core functionality
+################################################################################
+def create_item(root_key, item: ContextMenuItem):
+    item_key = CreateKey(root_key, item.item_reg_key)
+    SetValue(item_key, "", REG_SZ, item.item_name)
+    SetValue(item_key, "command", REG_SZ, item.command)
+    if item.icon != "":
+        SetValueEx(item_key, "Icon", 0, REG_SZ, item.icon)
+    if item.extended:
+        SetValueEx(item_key, "Extended", 0, REG_SZ, "")
+    CloseKey(item_key)
+
+
+def create_group(root_key, group: ContextMenuGroup):
+    if is_cyclic_group(group):
+        raise CyclicGroupException(
+            "Congratulations! You're about to break your registry")
+    group_key = CreateKey(root_key, group.group_reg_key)
+
+    SetValueEx(group_key, "MUIVerb", 0, REG_SZ, group.group_name)
+    SetValueEx(group_key, 'SubCommands', 0, REG_SZ, "")
+    if group.icon != "":
+        SetValueEx(group_key, "Icon", 0, REG_SZ, group.icon)
+    if group.extended:
+        SetValueEx(group_key, "Extended", 0, REG_SZ, "")
+
+    subcommands_key = CreateKey(group_key, "shell")
+
+    for item in group.items:
+        if isinstance(item, ContextMenuItem):
+            create_item(subcommands_key, item)
+        elif isinstance(item, ContextMenuGroup):
+            create_group(subcommands_key, item)
+    CloseKey(subcommands_key)
+    CloseKey(group_key)
 
 
 def delete_item(root_key, item_reg_key):
@@ -165,10 +209,10 @@ if __name__ == '__main__':
 
     user_root = get_root(UserType.CURR_USER, RootType.DIR_BG)
     create_group(user_root, group1)
-    CloseKey(user_root)
 
     input("Group 1 created, press ENTER to continue")
 
     delete_item(user_root, "Group 1")
+    CloseKey(user_root)
 
     input("Group 1 deleted, press ENTER to close")
