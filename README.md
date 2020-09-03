@@ -2,6 +2,19 @@
 
 A simple and intuitive way to add your custom scripts to your windows right click contextmenu.
 
+## Installation
+
+You can download the pywin_contextmenu.py file from this repository (https://raw.githubusercontent.com/naveennamani/pywin_contextmenu/master/pywin_contextmenu.py) and place the file in your scripts folder.
+
+Or you can install this package from pypi using
+```shell script
+pip install pywin_contextmenu
+```
+and simply import in your scripts.
+```python
+import pywin_contextmenu as pycm
+```
+
 ## Usage
 ```python
 import pywin_contextmenu as pycm
@@ -37,7 +50,8 @@ ContextMenuItem(
     command, # command to be executed when selected
     item_reg_key = "", # registry key associated with the item
                        # (if not given will be treated as item_name)
-    icon = "" # path to an icon to be shown with the item
+    icon = "", # path to an icon to be shown with the item
+    extended = False # set to True if the item is to be shown when right clicked with shift button
 )
 ```
 ### `ContextMenuGroup`
@@ -46,7 +60,8 @@ This class groups multiple items and subgroups.
 ContextMenuGroup(
     group_name, # name of the group to be shown
     group_reg_key = "", # registry key associated with the group
-    icon = "" # path to an icon to be shown with the group
+    icon = "", # path to an icon to be shown with the group
+    extended = False # set to True if the group is to be shown when right clicked with shift button
 )
 ```
 For adding items or groups to a group instance call add_item method of the class.
@@ -64,7 +79,8 @@ ContextMenuGroup.add_item(subgroup)
  If the `root_type` is `RootType.FILE` then `file_type` argument is required and indicates the file extention.
 * `python_script_cmd(script_path, rel_path = False, hide_terminal = False)` - a utility function to convert a given `script_path` to an executable command.
 * `create_item(root_key, item: ContextMenuItem)` - adds the `item` to the context menu
-* `create_group(root_key, group: ContextMenuGroup)` - adds the `group` to the context menu
+* `create_group(root_key, group: ContextMenuGroup)` - adds the `group` to the context menu.
+ Throws `CyclicGroupException` when the group contains cyclic references.
 * `delete_item(root_key, item_reg_key)` - deletes the `item_reg_key` at the given `root_key` registry.
  **Warning:** Please ensure you're not deleting the keys at the top level registry keys (e.g. `HKEY_CLASSES_ROOT`, `HKEY_CURRENT_USER` etc.)
 ---

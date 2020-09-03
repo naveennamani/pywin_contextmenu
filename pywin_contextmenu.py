@@ -1,6 +1,7 @@
 # coding=utf-8
 # (c) Naveen Namani
 # https://github.com/naveennamani
+# __version__ = 2020.9.3
 import os
 import sys
 import warnings
@@ -17,6 +18,8 @@ from winreg import QueryInfoKey
 from winreg import REG_SZ
 from winreg import SetValue
 from winreg import SetValueEx
+
+__version__ = (2020, 9, 3)
 
 
 ################################################################################
