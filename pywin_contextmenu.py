@@ -1,7 +1,7 @@
 # coding=utf-8
 # (c) Naveen Namani
 # https://github.com/naveennamani
-# __version__ = 2020.9.3
+# __version__ = 2020.9.7
 import os
 import sys
 import warnings
@@ -19,7 +19,7 @@ from winreg import REG_SZ
 from winreg import SetValue
 from winreg import SetValueEx
 
-__version__ = (2020, 9, 3)
+__version__ = (2020, 9, 7)
 
 
 ################################################################################
@@ -40,6 +40,13 @@ class UserType(Enum):
 
 
 ################################################################################
+# Custom Exceptions
+################################################################################
+class CyclicGroupException(Exception):
+    pass
+
+
+################################################################################
 # classes for storing the information about ContextMenuItem and ContextMenuGroup
 ################################################################################
 class ContextMenuItem(object):
@@ -51,28 +58,63 @@ class ContextMenuItem(object):
         self.command = command
         self.extended = extended
 
+    def create(self, root_key):
+        item_key = CreateKey(root_key, self.item_reg_key)
+        SetValue(item_key, "", REG_SZ, self.item_name)
+        SetValue(item_key, "command", REG_SZ, self.command)
+        if self.icon != "":
+            SetValueEx(item_key, "Icon", 0, REG_SZ, self.icon)
+        if self.extended:
+            SetValueEx(item_key, "Extended", 0, REG_SZ, "")
+        CloseKey(item_key)
+        return self
+
 
 class ContextMenuGroup(object):
     def __init__(self, group_name, group_reg_key = "", icon = "",
-                 extended = False):
+                 extended = False, items = None):
         self.group_name = group_name
         self.group_reg_key = group_name if group_reg_key == "" else group_reg_key
         self.icon = icon
         self.items = []
         self.extended = extended
+        if items is not None:
+            self.add_items(items)
 
     def add_item(self, item):
         assert isinstance(
             item, (ContextMenuItem, ContextMenuGroup)
         ), "Please pass instance of ContextMenuItem or ContextMenuGroup"
         self.items.append(item)
+        return self
 
+    def add_items(self, items):
+        assert isinstance(items, (
+            tuple, list)), "Please provide an instance of tuple or list"
+        for item in items:
+            self.add_item(item)
+        return self
 
-################################################################################
-# Custom Exceptions
-################################################################################
-class CyclicGroupException(Exception):
-    pass
+    def create(self, root_key):
+        if is_cyclic_group(self):
+            raise CyclicGroupException(
+                "Congratulations! You're about to break your registry")
+        group_key = CreateKey(root_key, self.group_reg_key)
+
+        SetValueEx(group_key, "MUIVerb", 0, REG_SZ, self.group_name)
+        SetValueEx(group_key, 'SubCommands', 0, REG_SZ, "")
+        if self.icon != "":
+            SetValueEx(group_key, "Icon", 0, REG_SZ, self.icon)
+        if self.extended:
+            SetValueEx(group_key, "Extended", 0, REG_SZ, "")
+
+        subcommands_key = CreateKey(group_key, "shell")
+
+        for item in self.items:
+            item.create(subcommands_key)
+        CloseKey(subcommands_key)
+        CloseKey(group_key)
+        return self
 
 
 ################################################################################
@@ -144,44 +186,6 @@ def _del_key(rk):
     DeleteKey(rk, "")
 
 
-################################################################################
-# core functionality
-################################################################################
-def create_item(root_key, item: ContextMenuItem):
-    item_key = CreateKey(root_key, item.item_reg_key)
-    SetValue(item_key, "", REG_SZ, item.item_name)
-    SetValue(item_key, "command", REG_SZ, item.command)
-    if item.icon != "":
-        SetValueEx(item_key, "Icon", 0, REG_SZ, item.icon)
-    if item.extended:
-        SetValueEx(item_key, "Extended", 0, REG_SZ, "")
-    CloseKey(item_key)
-
-
-def create_group(root_key, group: ContextMenuGroup):
-    if is_cyclic_group(group):
-        raise CyclicGroupException(
-            "Congratulations! You're about to break your registry")
-    group_key = CreateKey(root_key, group.group_reg_key)
-
-    SetValueEx(group_key, "MUIVerb", 0, REG_SZ, group.group_name)
-    SetValueEx(group_key, 'SubCommands', 0, REG_SZ, "")
-    if group.icon != "":
-        SetValueEx(group_key, "Icon", 0, REG_SZ, group.icon)
-    if group.extended:
-        SetValueEx(group_key, "Extended", 0, REG_SZ, "")
-
-    subcommands_key = CreateKey(group_key, "shell")
-
-    for item in group.items:
-        if isinstance(item, ContextMenuItem):
-            create_item(subcommands_key, item)
-        elif isinstance(item, ContextMenuGroup):
-            create_group(subcommands_key, item)
-    CloseKey(subcommands_key)
-    CloseKey(group_key)
-
-
 def delete_item(root_key, item_reg_key):
     try:
         _del_key(OpenKey(root_key, item_reg_key))
@@ -194,28 +198,33 @@ def delete_item(root_key, item_reg_key):
 
 
 if __name__ == '__main__':
-    group1 = ContextMenuGroup("Group 1")
-    group2 = ContextMenuGroup("Group 2")
-    group3 = ContextMenuGroup("Group 3")
-
-    group1.add_item(group2)
-    group2.add_item(group3)
-
-    group1.add_item(ContextMenuItem("Item 1", "cmd.exe"))
-    group1.add_item(ContextMenuItem("Item 2", "cmd.exe"))
-
-    group2.add_item(ContextMenuItem("Item 3", "cmd.exe"))
-    group2.add_item(ContextMenuItem("Item 4", "cmd.exe"))
-
-    group3.add_item(ContextMenuItem("Item 5", "cmd.exe"))
-    group3.add_item(ContextMenuItem("Item 6", "cmd.exe"))
-
     user_root = get_root(UserType.CURR_USER, RootType.DIR_BG)
-    create_group(user_root, group1)
 
+    # beautiful pythonic way
+    cmgroup = ContextMenuGroup("Group 1", items = [
+        ContextMenuItem("Item 1", "cmd.exe"),
+        ContextMenuItem("Item 2", "cmd.exe"),
+        ContextMenuGroup("Group 2", items = [
+            ContextMenuItem("Item 3", "cmd.exe"),
+            ContextMenuItem("Item 4", "cmd.exe"),
+            ContextMenuGroup("Group 3", items = [
+                ContextMenuItem("Item 5", "cmd.exe"),
+                ContextMenuItem("Item 6", "cmd.exe")
+            ])
+        ])
+    ]).create(user_root)
     input("Group 1 created, press ENTER to continue")
 
-    delete_item(user_root, "Group 1")
-    CloseKey(user_root)
-
+    delete_item(user_root, cmgroup.group_reg_key)
     input("Group 1 deleted, press ENTER to close")
+
+    cmgroup = ContextMenuGroup("Group 1", items = [
+        ContextMenuItem("Item 1", python_script_cmd(
+            "example.py", rel_path = True)),
+        ContextMenuItem("Item 2", python_script_cmd(
+            "abc.py", rel_path = True))
+    ]).create(
+        get_root(UserType.CURR_USER, RootType.DIR_BG)
+    ).create(
+        get_root(UserType.CURR_USER, RootType.ALL_FILES)
+    )
