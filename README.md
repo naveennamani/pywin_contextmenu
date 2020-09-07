@@ -1,3 +1,9 @@
+![PyPI](https://img.shields.io/pypi/v/pywin_contextmenu)
+![PyPI - Downloads](https://img.shields.io/pypi/dd/pywin_contextmenu)
+![GitHub commit activity](https://img.shields.io/github/commit-activity/m/naveennamani/pywin_contextmenu)
+![GitHub last commit](https://img.shields.io/github/last-commit/naveennamani/pywin_contextmenu)
+
+
 # pywin_contextmenu
 
 A simple and intuitive way to add your custom scripts to your windows right click contextmenu.
