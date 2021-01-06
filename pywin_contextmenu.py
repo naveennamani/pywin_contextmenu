@@ -1,11 +1,16 @@
 # coding=utf-8
 # (c) Naveen Namani
-# https://github.com/naveennamani
-# __version__ = 2020.9.7
+# https://github.com/naveennamani/pywin_contextmenu
+# __version__ = 2021.1.6
 import os
 import sys
 import warnings
 from enum import Enum
+from inspect import isfunction
+from pathlib import Path
+from typing import Callable
+from typing import List
+from typing import Union
 from winreg import CloseKey
 from winreg import CreateKey
 from winreg import DeleteKey
@@ -19,7 +24,7 @@ from winreg import REG_SZ
 from winreg import SetValue
 from winreg import SetValueEx
 
-__version__ = (2020, 9, 7)
+__version__ = (2021, 1, 6)
 
 
 ################################################################################
@@ -50,15 +55,27 @@ class CyclicGroupException(Exception):
 # classes for storing the information about ContextMenuItem and ContextMenuGroup
 ################################################################################
 class ContextMenuItem(object):
-    def __init__(self, item_name, command, item_reg_key = "", icon = "",
-                 extended = False):
+    def __init__(
+            self,
+            item_name: str,  # to be displayed in the contextmenu
+            command: str,  # command to be executed
+            item_reg_key: str = "",  # key to be used in the registry
+            icon: str = "",  # path to the icon to be shown along with item
+            extended: bool = False  # if true, item will be shown with shift key
+    ):
         self.item_name = item_name
         self.item_reg_key = item_name if item_reg_key == "" else item_reg_key
         self.icon = icon
         self.command = command
         self.extended = extended
 
-    def create(self, root_key):
+    def create(self, root_key: HKEYType):
+        """
+        Adds entries into the registry for creating the item
+        :param root_key: HKEYType key where the item is to be created.
+                         Obtain the key using `get_root` function
+        :return: Returns the ContextMenuItem item
+        """
         item_key = CreateKey(root_key, self.item_reg_key)
         SetValue(item_key, "", REG_SZ, self.item_name)
         SetValue(item_key, "command", REG_SZ, self.command)
@@ -69,10 +86,64 @@ class ContextMenuItem(object):
         CloseKey(item_key)
         return self
 
+    def create_for(self, user_type: UserType, root_types: List[RootType]):
+        """
+        Add the item to multiple locations
+        Usage: contextmenu_item.create_for(UserType.CURR_USER, [RootType.DIR, RootType.DIR_BG])
+        """
+        for root_type in root_types:
+            self.create(get_root(user_type, root_type))
+        return self
+
+    def delete(self, root_key: HKEYType):
+        """ Delete the registry key at `root_key` """
+        delete_item(root_key, self.item_reg_key)
+        return self
+
+    def delete_for(self, user_type: UserType, root_types: List[RootType]):
+        for root_type in root_types:
+            self.delete(get_root(user_type, root_type))
+        return self
+
+
+class PythonContextMenuItem(ContextMenuItem):
+    def __init__(
+            self,
+            item_name: str,  # to be displayed in the contextmenu
+            python_function: Callable,  # python function to be executed
+            item_reg_key: str = "",  # key to be used in the registry
+            icon: str = "",  # path to the icon to be shown along with item
+            hide_terminal: bool = False,  # hide the python console on execution
+            extended: bool = False  # if true, item will be shown with shift key
+    ):
+        if isfunction(python_function):
+            script_path = Path(python_function.__code__.co_filename)
+            script_folder = script_path.parent
+            script_name = script_path.name.split(script_path.suffix)[0]
+            function_name = python_function.__name__
+            py_script = f"""import os, sys; os.chdir(r'{script_folder}'); __import__('{script_name}').{function_name}(sys.argv[1])"""
+            py_executable = sys.executable.replace(
+                "python.exe",
+                "pythonw.exe") if hide_terminal else sys.executable
+            command = f"""{py_executable} -c "{py_script}" "%V" """
+            print(command)
+        else:
+            raise TypeError(
+                "Please pass a function type to python_function argument")
+        super(PythonContextMenuItem, self).__init__(
+            item_name, command, item_reg_key, icon, extended)
+
 
 class ContextMenuGroup(object):
-    def __init__(self, group_name, group_reg_key = "", icon = "",
-                 extended = False, items = None):
+    def __init__(
+            self,
+            group_name: str,  # to be displayed in the contextmenu
+            group_reg_key: str = "",  # key to be used in the registry
+            icon: str = "",  # path to the icon to be shown along with item
+            items: "List[Union[ContextMenuItem, ContextMenuGroup]]" = None,
+            # items and subgroups to be shown
+            extended: bool = False  # if true, item will be shown with shift key
+    ):
         self.group_name = group_name
         self.group_reg_key = group_name if group_reg_key == "" else group_reg_key
         self.icon = icon
@@ -81,21 +152,28 @@ class ContextMenuGroup(object):
         if items is not None:
             self.add_items(items)
 
-    def add_item(self, item):
+    def add_item(self, item: "Union[ContextMenuItem, ContextMenuGroup]"):
         assert isinstance(
             item, (ContextMenuItem, ContextMenuGroup)
         ), "Please pass instance of ContextMenuItem or ContextMenuGroup"
         self.items.append(item)
         return self
 
-    def add_items(self, items):
+    def add_items(self,
+                  items: "List[Union[ContextMenuItem, ContextMenuGroup]]"):
         assert isinstance(items, (
             tuple, list)), "Please provide an instance of tuple or list"
         for item in items:
             self.add_item(item)
         return self
 
-    def create(self, root_key):
+    def create(self, root_key: HKEYType):
+        """
+        Adds entries into the registry for creating the item
+        :param root_key: HKEYType key where the item is to be created.
+                         Obtain the key using `get_root` function
+        :return: Returns the ContextMenuGroup item
+        """
         if is_cyclic_group(self):
             raise CyclicGroupException(
                 "Congratulations! You're about to break your registry")
@@ -114,6 +192,20 @@ class ContextMenuGroup(object):
             item.create(subcommands_key)
         CloseKey(subcommands_key)
         CloseKey(group_key)
+        return self
+
+    def create_for(self, user_type: UserType, root_types: List[RootType]):
+        for root_type in root_types:
+            self.create(get_root(user_type, root_type))
+        return self
+
+    def delete(self, root_key: HKEYType):
+        delete_item(root_key, self.group_reg_key)
+        return self
+
+    def delete_for(self, user_type: UserType, root_types: List[RootType]):
+        for root_type in root_types:
+            self.delete(get_root(user_type, root_type))
         return self
 
 
@@ -176,7 +268,7 @@ def is_cyclic_group(group: ContextMenuGroup, all_group_reg_keys = None) -> bool:
     return False
 
 
-def _del_key(rk):
+def _del_key(rk: HKEYType):
     no_subkeys, _, __ = QueryInfoKey(rk)
     # print(no_subkeys)
     for i in range(no_subkeys):
@@ -186,7 +278,7 @@ def _del_key(rk):
     DeleteKey(rk, "")
 
 
-def delete_item(root_key, item_reg_key):
+def delete_item(root_key: HKEYType, item_reg_key: str):
     try:
         _del_key(OpenKey(root_key, item_reg_key))
     except FileNotFoundError:
@@ -197,27 +289,42 @@ def delete_item(root_key, item_reg_key):
         print_exc()
 
 
+def test_function(path_or_file_name):
+    print("Path/file named selected", path_or_file_name)
+    input("Press ENTER to continue")
+
+
 if __name__ == '__main__':
+    # add a menu for current user to be shown in directory background contextmenu
     user_root = get_root(UserType.CURR_USER, RootType.DIR_BG)
 
-    # beautiful pythonic way
-    cmgroup = ContextMenuGroup("Group 1", items = [
+    # define complex nested contextmenu groups in a beautiful pythonic way
+    cmgroup = ContextMenuGroup("Group 1", items = [  # first group
         ContextMenuItem("Item 1", "cmd.exe"),
-        ContextMenuItem("Item 2", "cmd.exe"),
-        ContextMenuGroup("Group 2", items = [
+        PythonContextMenuItem("Python fn", test_function),
+        # execute a function function
+        ContextMenuGroup("Group 2", items = [  # second group
             ContextMenuItem("Item 3", "cmd.exe"),
             ContextMenuItem("Item 4", "cmd.exe"),
-            ContextMenuGroup("Group 3", items = [
+            ContextMenuGroup("Group 3", items = [  # one more nested group
                 ContextMenuItem("Item 5", "cmd.exe"),
                 ContextMenuItem("Item 6", "cmd.exe")
             ])
         ])
     ]).create(user_root)
+
+    # create the group to be shown at multiple locations easily
+    cmgroup.create_for(UserType.CURR_USER, [RootType.DIR, RootType.ALL_FILES])
     input("Group 1 created, press ENTER to continue")
 
+    # delete the menu created for DIB_BG location
     delete_item(user_root, cmgroup.group_reg_key)
     input("Group 1 deleted, press ENTER to close")
 
+    # delete for other locations
+    cmgroup.delete_for(UserType.CURR_USER, [RootType.DIR])
+
+    # convert a python script to executable command using python_script_cmd function
     cmgroup = ContextMenuGroup("Group 1", items = [
         ContextMenuItem("Item 1", python_script_cmd(
             "example.py", rel_path = True)),

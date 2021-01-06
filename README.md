@@ -14,14 +14,14 @@ You can download the pywin_contextmenu.py file from this repository (https://raw
 
 Or you can install this package from pypi using
 ```shell script
-pip install pywin_contextmenu
+pip install pywin-contextmenu
 ```
 and simply import in your scripts.
 ```python
 import pywin_contextmenu as pycm
 ```
 
-## Usage
+## Detailed Usage
 ```python
 import pywin_contextmenu as pycm
 
@@ -56,6 +56,32 @@ pycm.ContextMenuGroup("Group 1", items = [
 )
 ```
 
+## Simple and easy usage
+```python
+import pywin_contextmenu as pycm
+
+def test_function(file_or_dir_name):
+    print(file_or_dir_name)
+    input("Press ENTER to continue")
+
+
+# create the nested groups to execute direct commands, python functions
+# and python scripts
+cmgroup = pycm.ContextMenuGroup("Group 1", items = [
+    pycm.ContextMenuItem("Open cmd", "cmd.exe"),
+    pycm.PythonContextMenuItem("Test py", test_function),
+    pycm.ContextMenuGroup("Group 2", items = [
+        pycm.PythonContextMenuItem("Python script test", pycm.python_script_cmd(
+            "example.py", rel_path = True, hide_terminal = True
+        ))
+    ])
+])
+
+# create the group for the current user to be shown on right click of
+# directory, and all files
+cmgroup.create_for(pycm.UserType.CURR_USER, [pycm.RootType.DIr, pycm.RootType.ALL_FILES])
+```
+
 ## API
 The script depends on two main classes `ContextMenuItem` and `ContextMenuGroup`.
 
@@ -72,10 +98,29 @@ ContextMenuItem(
     extended = False # set to True if the item is to be shown when right clicked with shift button
 )
 ```
-For creating the item simply call the `.create` method.
+#### Methods
+`.create(root_key: HKEYType)` - Adds the item to the registry at the given registry `root_key`. Obtain the `root_key` using `get_root` utility method.
+
+`.create_for(user_type: UserType, root_type: List[RootType])` - Adds the items for given user and given root locations.
+
+`.delete(root_key: HKEYType)` - Delete the item at the given `root_key`.
+
+`.delete_for(user_type: UserType, root_type: List[RootType])` - Delete the items for the given user and the root locations.
+###### Note: The `.delete` is not preferred as any `root_key` can be passed. Instead please use `.delete_for` method as the registry keys to be deleted will be automatically and safely deleted.
+
+### `PythonContextMenuItem`
+This class inherits `ContextMenuItem` and converts a python function to an executable command.
+Simply pass the python function as `python_function` argument.
+```python
+PythonContextMenuItem(
+    item_name,
+    python_function: Callable[[str], Any], # callable python function which should take file/folder name as the single argument
+    item_reg_key = "",
+    icon = "",
+    extended = False
+)
 ```
-ContextMenuItem.create(root_key) # Create the item at the given registry root_key
-```
+
 ### `ContextMenuGroup`
 This class groups multiple items and subgroups.
 ```python
@@ -87,6 +132,8 @@ ContextMenuGroup(
     items = [] # items to be displayed on this group
 )
 ```
+
+#### Methods
 For adding items or groups to a group instance call `add_item`/`add_items` method of the class.
 ```python
 ContextMenuGroup.add_item(item)
@@ -100,12 +147,13 @@ Then to create the group and add to the contextmenu simply call `.create` with t
 ```
 ContextMenuGroup.create(root_key) # Create the group and add to contextmenu
 ```
+The class also has method `.create`, `.create_for`, `.delete` and `.delete_for` methods which are same as that of the methods of `ContextMenuItem`.
 
 #### Note: All methods of `ContextMenuItem` and `ContextMenuGroup` returns `self`, so they can be chained. Adding items to `ContextMenuGroup` will not add them to the contextmenu/registry unless `.create` method is called.
-## Utility methods available
 
-* `RootType` - an `Enum` for chosing where the context menu item/group will be displayed
-* `UserType` - an `Enum` for chosing whether to add the context menu for current user or for all users
+## Utility methods available
+* `RootType` - an `Enum` for choosing where the context menu item/group will be displayed
+* `UserType` - an `Enum` for choosing whether to add the context menu for current user or for all users
 * `get_root(user_type: UserType, root_type: RootType, file_type: str)` - creates/opens the registry key for the selected user_type and root_type.
  If the `root_type` is `RootType.FILE` then `file_type` argument is required and indicates the file extention.
 * `python_script_cmd(script_path, rel_path = False, hide_terminal = False)` - a utility function to convert a given `script_path` to an executable command.
