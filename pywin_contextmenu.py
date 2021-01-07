@@ -1,7 +1,7 @@
 # coding=utf-8
 # (c) Naveen Namani
 # https://github.com/naveennamani/pywin_contextmenu
-# __version__ = 2021.1.6
+# __version__ = 2021.1.7
 import os
 import sys
 import warnings
@@ -24,7 +24,7 @@ from winreg import REG_SZ
 from winreg import SetValue
 from winreg import SetValueEx
 
-__version__ = (2021, 1, 6)
+__version__ = (2021, 1, 7)
 
 
 ################################################################################
@@ -126,7 +126,7 @@ class PythonContextMenuItem(ContextMenuItem):
                 "python.exe",
                 "pythonw.exe") if hide_terminal else sys.executable
             command = f"""{py_executable} -c "{py_script}" "%V" """
-            print(command)
+            # print(command)
         else:
             raise TypeError(
                 "Please pass a function type to python_function argument")
@@ -222,6 +222,8 @@ def get_root(user_type: UserType, root_type: RootType,
     :param file_type: FILE_TYPE to be used if the root_type is RootType.FILE
     :return: HKEYType registry key
     """
+    if isinstance(root_type, str):
+        root_type = type("root_type", (), {"value": root_type})
     if user_type is UserType.CURR_USER:
         root_type = r"Software\\Classes\\" + root_type.value
     else:
@@ -230,7 +232,9 @@ def get_root(user_type: UserType, root_type: RootType,
         if file_type is None:
             raise ValueError(
                 'Please provide a FILE_TYPE you want\n'
-                'Usage example: get_root(user_type, RootType.FILE, r".zip")')
+                'Usage example: get_root(user_type, RootType.FILE, r".zip")'
+                'When using with `.create_for` methods, '
+                'use RootType.FILE.format(FILE_TYPE = ".zip"')
         else:
             root_type = root_type.format(FILE_TYPE = file_type)
     return CreateKey(user_type.value, root_type)

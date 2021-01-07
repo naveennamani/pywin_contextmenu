@@ -8,7 +8,7 @@ with open(path.join(here, 'README.md'), encoding = 'utf-8') as f:
 
 setup(
     name = 'pywin_contextmenu',
-    version = '2021.1.6',
+    version = '2021.1.7',
     description = 'A simple and intuitive way to add your custom scripts to '
                   'the windows right click contextmenu.',
     long_description = long_description,

@@ -78,8 +78,12 @@ cmgroup = pycm.ContextMenuGroup("Group 1", items = [
 ])
 
 # create the group for the current user to be shown on right click of
-# directory, and all files
-cmgroup.create_for(pycm.UserType.CURR_USER, [pycm.RootType.DIr, pycm.RootType.ALL_FILES])
+# directory, directory background and for python files
+cmgroup.create_for(pycm.UserType.CURR_USER, [
+    pycm.RootType.DIR,
+    pycm.RootType.DIR_BG,
+    pycm.RootType.FILE.format(FILE_TYPE = ".py")
+])
 ```
 
 ## API
